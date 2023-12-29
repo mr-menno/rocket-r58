@@ -1,51 +1,51 @@
-name: Build and Release
-
 on:
   push:
     tags:
-      - 'v*'
-
+      - "v*"
+  pull_request:
+    branches: [main]
 jobs:
-  release:
+  build:
+    name: Build
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/cache@v3
+      - name: Checkout repo
+        uses: actions/checkout@v3
+      - name: Set up python
+        uses: actions/setup-python@v4
         with:
-          path: |
-            ~/.cache/pip
-            ~/.platformio/.cache
-          key: ${{ runner.os }}-pio
-      - uses: actions/setup-python@v4
+          python-version: "3.x"
+          architecture: "x64"
+      - name: Install PlatformIO
+        run: python3 -m pip install platformio==6.1.11
+      - name: Build firmwares
+        run: FIRMWARE_VERSION=${{github.ref_name}} platformio run
+      - name: Archive
+        uses: actions/upload-artifact@v3
         with:
-          python-version: '3.9'
-      - name: Install PlatformIO Core
-        run: pip install --upgrade platformio
-
-      - name: Build PlatformIO Project
-        run: pio run 
-  # release:
-  #   runs-on: ubuntu-latest
-  #   needs: build
-
-  #   steps:
-      - name: Create GitHub Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: firmware
+          path: .pio/build/*/firmware*.bin
+          retention-days: 1
+          
+  release:
+    name: Release
+    # if: startsWith(github.event.ref, 'refs/tags/v')
+    needs: build
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo for CHANGELOG
+        uses: actions/checkout@v3
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
         with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
-          draft: false
-          prerelease: false
-
-      - name: Upload firmware
-        id: upload-release
-        uses: actions/upload-release-asset@v1
+          name: firmware
+          path: firmware
+      # - name: Display structure of downloaded files
+      #   run: ls -R
+      - name: release
+        uses: ncipollo/release-action@v1
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./.pio/build/nodemcu-32s/firmware.bin
-          asset_name: firmware.bin
-          asset_content_type: application/octet-stream
+          artifacts: "firmware/*/firmware*.bin"
+          bodyFile: "CHANGELOG.md"
