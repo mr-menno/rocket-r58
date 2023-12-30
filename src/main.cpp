@@ -70,6 +70,7 @@ void sleep() {
     esp_sleep_enable_ext0_wakeup(32,0);
     display.clearDisplay();
     display.display();
+    rtc_gpio_pullup_en(PIN_SWITCH);
     esp_deep_sleep_start();
   }
 }  
@@ -180,6 +181,7 @@ void pumpOff() {
 }    
 
 void runManual() {
+  wake();
   display.clearDisplay();
   display.setTextSize(2);
   
@@ -262,6 +264,7 @@ void setup() {
   display.display();
   delay(1000);
   display.clearDisplay();
+  rtc_gpio_deinit(PIN_SWITCH);
   pinMode(PIN_SWITCH, INPUT_PULLUP);
   pinMode(PIN_MODE, INPUT_PULLUP);
   pinMode(PIN_PUMP, OUTPUT);
