@@ -3,6 +3,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include "driver/rtc_io.h"
+#include <WiFi.h>
 
 #if !( defined(ESP8266) ||  defined(ESP32) )
   #error This code is intended to run on the ESP32 platform! Please check your Tools->Board setting.
@@ -55,10 +56,10 @@ void displayCenterText(String text) {
   display.getTextBounds(text, 0, 0, &x1, &y1, &width, &height);
 
   // display on horizontal and vertical center
-  display.clearDisplay(); // clear display
+  // display.clearDisplay(); // clear display
   display.setCursor((SCREEN_WIDTH - width) / 2, (SCREEN_HEIGHT - height) / 2);
   display.println(text); // text to display
-  display.display();
+  // display.display();
 }
 
 //VARS - PUMP
@@ -66,18 +67,20 @@ int pumpMaxRun=45;
 int pumpStopTime=0;
 bool pumpState=false;
 
-int sleepAfter = 0;
 int wakeTimeout=120;
+int suspendAfter = wakeTimeout*1000;
 void wake() {
-  sleepAfter=millis()+(wakeTimeout*1000);
+  suspendAfter=millis()+(wakeTimeout*1000);
 }   
-void sleep() {
-  if(millis()>sleepAfter) {
-    esp_sleep_enable_ext0_wakeup(GPIO_NUM_32,0);
+void suspend() {
+  if(millis()>suspendAfter && millis()<(suspendAfter+100)) {
+    // rtc_gpio_pullup_en(GPIO_NUM_32);
+    // rtc_gpio_pulldown_dis(GPIO_NUM_32);
+    // esp_sleep_enable_ext0_wakeup(GPIO_NUM_32,0);
     display.clearDisplay();
     display.display();
-    rtc_gpio_pullup_en(GPIO_NUM_32);
-    esp_deep_sleep_start();
+    // rtc_gpio_pullup_en(GPIO_NUM_32);
+    // esp_deep_sleep_start();
   }
 }  
   
@@ -85,7 +88,12 @@ void sleep() {
 int _countdown = 0;
 int lastMillis = millis();
 
+bool firstSkip = true;
 bool countdown(int interval) {
+  if(millis()<5000 && firstSkip) {
+    _countdown = _countdown - (millis()/interval);
+    firstSkip=false;
+  }
   if(millis() > (lastMillis + interval)) {
     _countdown--;
     lastMillis = millis();
@@ -95,7 +103,7 @@ bool countdown(int interval) {
 }
 
 void displayCountdown() {
-  display.clearDisplay();
+  //display.clearDisplay();
   display.setTextSize(4); // Draw 2X-scale text
   display.setTextColor(SSD1306_WHITE);
   if(_countdown>30) {
@@ -115,18 +123,18 @@ void setModeManual() {
   mode='M';
   autoReset=millis();
   Serial.println("switching to manual");
-  display.setTextSize(2); // Draw 2X-scale text
-  displayCenterText(F("MANUAL"));
-  display.display();
+  // display.setTextSize(2); // Draw 2X-scale text
+  // displayCenterText(F("MANUAL"));
+  // display.display();
 }
 
 void setModeAuto() {
   mode='C';
   _countdown=-36;
   Serial.println("switching to auto");
-  display.setTextSize(2); // Draw 2X-scale text
-  displayCenterText(F("AUTO"));
-  display.display();
+  // display.setTextSize(2); // Draw 2X-scale text
+  // displayCenterText(F("AUTO"));
+  // display.display();
 }
 
 void debugStats() {
@@ -169,7 +177,7 @@ void runPump() {
   }
 }
 void pumpOn() {
-  wake();
+  // wake();
   if(pumpState) {
     //NOOP
   } else {
@@ -178,59 +186,64 @@ void pumpOn() {
   }
 }
 void pumpOff() {
-  wake();
+  // wake();
   pumpState=false;
   pumpStopTime=0;
 }    
 
 int manualReset=60;
 void runManual() {
+  wake();
   if(millis()>(autoReset+(manualReset*1000))) {
     setModeAuto();
   } 
   wake();
-  display.clearDisplay();
-  display.setTextSize(2);
+  // display.clearDisplay();
+  // display.setTextSize(2);
   
   if(!digitalRead(PIN_SWITCH)) {
     pumpOn();
     autoReset=millis();
-    displayCenterText("Manual On");
+    // displayCenterText("Manual On");
   } else {
     pumpOff();
-    displayCenterText("Manual Off");
+    // displayCenterText("Manual Off");
   }
-  display.display();
+  // display.display();
 }
 
 bool countdownActive = false;
 
 void runAuto() {
   if(countdownActive && _countdown>0) {
+    wake();
     if(countdown(1000)) {
       if(_countdown>30) {
         pumpOff();
-        display.setTextSize(4);
-        displayCenterText("PI: "+String(_countdown-30));
-        display.display();
+        // display.setTextSize(4);
+        // displayCenterText("PI: "+String(_countdown-30));
+        // display.display();
       } else {
         pumpOn();
-        display.setTextSize(4);
-        displayCenterText(String(_countdown));
-        display.display();
+        // display.setTextSize(4);
+        // displayCenterText(String(_countdown));
+        // display.display();
       }
     }
   } else if(countdownActive && countdown(1000)) {
+    wake();
     pumpOff();
-    display.setTextSize(2);
-    displayCenterText("done");
-    display.display();
+    // display.setTextSize(2);
+    // displayCenterText("done");
+    // display.display();
   }
   if(!countdownActive) {
     pumpOff();
-    display.setTextSize(2);
-    displayCenterText("auto");
-    display.display();
+    // display.setTextSize(2);
+    if(millis()<suspendAfter) {
+      // displayCenterText("auto");
+      // display.display();
+    }
   }
   if(digitalRead(PIN_SWITCH)) {
     countdownActive=false;
@@ -253,6 +266,105 @@ void readModeButton() {
     }
   }
 }
+
+void displayOverlay() {
+  if(millis()<suspendAfter) {
+    //IP on Screen
+    display.setTextSize(1);
+    display.setCursor(0,25);
+    display.print("IP: ");
+    display.print(WiFi.localIP());
+  }
+}
+
+void drawManual() {
+  int16_t x1;
+  int16_t y1;
+  uint16_t width;
+  uint16_t height;
+
+  display.setTextColor(SSD1306_WHITE);
+  display.setTextSize(1);
+  display.getTextBounds("Manual Mode", 0, 0, &x1, &y1, &width, &height);
+  display.setCursor((SCREEN_WIDTH - width) / 2, 0);
+  display.print("Manual Mode");
+  display.drawLine(0,8,127,8,SSD1306_WHITE);
+  display.setTextColor(SSD1306_WHITE);
+  display.setTextSize(2);
+  String txt;
+  if(pumpState) {
+    txt="PUMP ON";
+  } else {
+    txt="PUMP OFF";
+  }
+  display.getTextBounds(String(txt), 0, 0, &x1, &y1, &width, &height);
+  display.setCursor((SCREEN_WIDTH - width) / 2, 10);
+  display.print(String(txt));
+}
+void drawCountdown() {
+  int16_t x1;
+  int16_t y1;
+  uint16_t width;
+  uint16_t height;
+
+  if(!countdownActive) {
+    display.setTextColor(SSD1306_WHITE);
+    display.setTextSize(1);
+    display.getTextBounds("Coffee Time!", 0, 0, &x1, &y1, &width, &height);
+    display.setCursor((SCREEN_WIDTH - width) / 2, 10);
+    display.print("Coffee Time!");
+  } else if(_countdown>30) {
+    display.setTextColor(SSD1306_WHITE);
+    display.setTextSize(1);
+    display.getTextBounds("Pre-Infusion", 0, 0, &x1, &y1, &width, &height);
+    display.setCursor((SCREEN_WIDTH - width) / 2, 0);
+    display.print("Pre-Infusion");
+    display.drawLine(0,10,127,10,SSD1306_WHITE);
+    display.setTextColor(SSD1306_WHITE);
+    display.setTextSize(3);
+    display.getTextBounds(String(_countdown-30), 0, 0, &x1, &y1, &width, &height);
+    display.setCursor((SCREEN_WIDTH - width) / 2, 12);
+    display.print(String(_countdown-30));
+  } else if(_countdown>0) {
+    display.setTextSize(1);
+    display.getTextBounds("Extraction", 0, 0, &x1, &y1, &width, &height);
+    display.setCursor((SCREEN_WIDTH - width) / 2, 0);
+    // display.setTextColor(SSD1306_BLACK,SSD1306_WHITE);
+    display.setTextColor(SSD1306_WHITE);
+    display.print("Extraction");
+    display.drawLine(0,10,127,10,SSD1306_WHITE);
+    display.setTextColor(SSD1306_WHITE);
+    display.setTextSize(3);
+    display.getTextBounds(String(_countdown), 0, 0, &x1, &y1, &width, &height);
+    display.setCursor((SCREEN_WIDTH - width) / 2, 12);
+    display.print(String(_countdown));
+  } else {
+    display.setTextColor(SSD1306_WHITE);
+    display.setTextSize(3);
+    display.getTextBounds("DONE", 0, 0, &x1, &y1, &width, &height);
+    display.setCursor((SCREEN_WIDTH - width) / 2, (SCREEN_HEIGHT - height) / 2);
+    display.print("DONE");
+  }
+}
+
+int lastScreenUpdate=0;
+void drawScreen() {
+  if(millis()<(lastScreenUpdate+200)) return;
+  lastScreenUpdate=millis();
+  display.clearDisplay();
+  if(mode=='C') {
+    drawCountdown();
+  }
+  if(mode=='M') {
+    drawManual();
+    // displayOverlay();
+  }
+  if(!countdownActive) {
+    displayOverlay();
+  }
+  display.display();
+}
+
 
 void setup() {
   Serial.begin(9600);
@@ -288,5 +400,6 @@ void loop() {
   }
   runPump();
   readModeButton();
-  sleep();
+  suspend();
+  drawScreen();
 }
