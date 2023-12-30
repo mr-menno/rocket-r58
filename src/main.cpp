@@ -180,13 +180,18 @@ void pumpOff() {
   pumpStopTime=0;
 }    
 
+int manualReset=60;
 void runManual() {
+  if(millis()>(autoReset+(manualReset*1000))) {
+    setModeAuto();
+  } 
   wake();
   display.clearDisplay();
   display.setTextSize(2);
   
   if(!digitalRead(PIN_SWITCH)) {
     pumpOn()(
+    autoReset=millis();
     displayCenterText("Manual On");
   } else {
     pumpOff();
