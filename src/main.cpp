@@ -1,27 +1,11 @@
-/**************************************************************************
- This is an example for our Monochrome OLEDs based on SSD1306 drivers
-
- Pick one up today in the adafruit shop!
- ------> http://www.adafruit.com/category/63_98
-
- This example is for a 128x64 pixel display using I2C to communicate
- 3 pins are required to interface (two I2C and one reset).
-
- Adafruit invests time and resources providing this open
- source code, please support Adafruit and open-source
- hardware by purchasing products from Adafruit!
-
- Written by Limor Fried/Ladyada for Adafruit Industries,
- with contributions from the open source community.
- BSD license, check license.txt for more information
- All text above, and the splash screen below must be
- included in any redistribution.
- **************************************************************************/
-
 #include <SPI.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+
+#if !( defined(ESP8266) ||  defined(ESP32) )
+  #error This code is intended to run on the ESP32 platform! Please check your Tools->Board setting.
+#endif
 
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 32 // OLED display height, in pixels
@@ -37,7 +21,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 #define NUMFLAKES     10 // Number of snowflakes in the animation example
 
-#define PIN_SWITCH    4
+#define PIN_SWITCH    32
 #define PIN_MODE      16
 #define PIN_PUMP      17
 
@@ -76,7 +60,21 @@ void displayCenterText(String text) {
   display.display();
 }
 
-bool pumpOn = false;
+int sleepAfter = 0;
+int wakeTimeout=120;
+void wake() {
+  sleepAfter=millis()+(wakeTimeout*1000);
+}   
+void sleep() {
+  if(millis()>sleepAfter) {
+    esp_sleep_enable_ext0_wakeup(32,0);
+    display.clearDisplay();
+    display.display();
+    esp_deep_sleep_start();
+  }
+}  
+  
+
 int _countdown = 0;
 int lastMillis = millis();
 
@@ -94,6 +92,7 @@ void displayCountdown() {
   display.setTextSize(4); // Draw 2X-scale text
   display.setTextColor(SSD1306_WHITE);
   if(_countdown>30) {
+    display.setTextSize(3);
     displayCenterText("PI: "+String(_countdown-30));
   } else {
     displayCenterText(String(_countdown));
@@ -101,8 +100,6 @@ void displayCountdown() {
   display.display();
 }
 
-
-int lastPinMode=millis();
 char mode='C';
 int lastDebug=millis();
 int autoReset=millis();
@@ -155,88 +152,95 @@ void debugStats() {
   }
 }
 
-void runManual() {
-  pumpOn = !digitalRead(PIN_SWITCH);
-  display.clearDisplay();
-  display.setTextSize(2);
-  if(pumpOn) {
+int pumpMaxRun=45;
+int pumpStopTime=0;
+bool pumpState=false
+void runPump() {
+  if(millis()>pumpStopTime) {
+    digitalWrite(PIN_PUMP,0);
+  } else if(pumpState) {
     digitalWrite(PIN_PUMP,1);
-    displayCenterText("Manual On");
   } else {
     digitalWrite(PIN_PUMP,0);
+  }
+}
+void pumpOn() {
+  wake();
+  if(pumpState) {
+    //NOOP
+  } else {
+    pumpState=true;
+    pumpStopTime=millis()+(pumpMaxRun*1000);
+  }
+}
+void pumpOff() {
+  wake();
+  pumpState=false;
+  pumpStopTime=0;
+}    
+
+void runManual() {
+  display.clearDisplay();
+  display.setTextSize(2);
+  
+  if(!digitalRead(PIN_SWITCH)) {
+    pumpOn()(
+    displayCenterText("Manual On");
+  } else {
+    pumpOff();
     displayCenterText("Manual Off");
   }
   display.display();
 }
 
 bool countdownActive = false;
+
 void runAuto() {
   if(countdownActive && _countdown>0) {
     if(countdown(1000)) {
       if(_countdown>30) {
-        pumpOn=false;
+        pumpOff()
         display.setTextSize(4);
         displayCenterText("PI: "+String(_countdown-30));
         display.display();
       } else {
-        pumpOn=true;
+        pumpOn();
         display.setTextSize(4);
         displayCenterText(String(_countdown));
         display.display();
       }
     }
   } else if(countdownActive && countdown(1000)) {
-    pumpOn=false;
+    pumpOff();
     display.setTextSize(2);
     displayCenterText("done");
     display.display();
   }
   if(!countdownActive) {
-    pumpOn=false;
+    pumpOff();
     display.setTextSize(2);
     displayCenterText("auto");
     display.display();
   }
   if(digitalRead(PIN_SWITCH)) {
     countdownActive=false;
-    pumpOn=false;
+    pumpOff();
   } else if(!digitalRead(PIN_SWITCH) && countdownActive==false) {
-    pumpOn=false;
+    pumpOff();
     _countdown=36;
     countdownActive=true;
-  }
-  if(pumpOn) {
-    digitalWrite(PIN_PUMP,1);
-  } else {
-    digitalWrite(PIN_PUMP,0);
   }
 }
-void runAuto2() {
-  if(!countdownActive && !digitalRead(PIN_SWITCH)) {
-    countdownActive=true;
-    _countdown=36;
-  }
-  if(_countdown>-30 && countdown(1000) && !digitalRead(PIN_SWITCH)) {
-    if(_countdown > 0 && _countdown<=30) {
-      // display.clearDisplay();
-      displayCountdown();
-    } else if(_countdown > -10) {
-      displayCenterText("DONE");
-      Serial.printf("Done at %d",_countdown);
+
+int lastPinMode=millis();
+void readModeButton() {
+  if(!digitalRead(PIN_MODE) && lastPinMode+500 < millis()) {
+    lastPinMode=millis();
+    if(mode=='C') {
+      setModeManual();
     } else {
-      Serial.println("clear display");
-      display.clearDisplay();
-      display.display();
+      setModeAuto();
     }
-  }
-  if(_countdown<=-30) {
-    // countdownActive
-  }
-  //control pump
-  if(_countdown>0 && _countdown <= 30) {
-    digitalWrite(PIN_PUMP,1);
-  } else {
-    digitalWrite(PIN_PUMP,0);
   }
 }
 
@@ -264,7 +268,6 @@ void setup() {
   setModeAuto();
 }
 
-
 void loop() {
   debugStats();
   if(mode=='C') {
@@ -272,12 +275,7 @@ void loop() {
   } else if(mode=='M') {
     runManual();
   }
-  if(!digitalRead(PIN_MODE) && lastPinMode+500 < millis()) {
-    lastPinMode=millis();
-    if(mode=='C') {
-      setModeManual();
-    } else {
-      setModeAuto();
-    }
-  }
+  runPump();
+  readModeButton();
+  sleep();
 }
