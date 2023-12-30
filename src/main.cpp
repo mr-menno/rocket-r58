@@ -272,7 +272,7 @@ void setup() {
   display.display();
   delay(1000);
   display.clearDisplay();
-  rtc_gpio_deinit(PIN_SWITCH);
+  rtc_gpio_deinit(GPIO_NUM_32);
   pinMode(PIN_SWITCH, INPUT_PULLUP);
   pinMode(PIN_MODE, INPUT_PULLUP);
   pinMode(PIN_PUMP, OUTPUT);
