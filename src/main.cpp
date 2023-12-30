@@ -73,10 +73,10 @@ void wake() {
 }   
 void sleep() {
   if(millis()>sleepAfter) {
-    esp_sleep_enable_ext0_wakeup(32,0);
+    esp_sleep_enable_ext0_wakeup(GPIO_NUM_32,0);
     display.clearDisplay();
     display.display();
-    rtc_gpio_pullup_en(PIN_SWITCH);
+    rtc_gpio_pullup_en(GPIO_NUM_32);
     esp_deep_sleep_start();
   }
 }  
@@ -193,7 +193,7 @@ void runManual() {
   display.setTextSize(2);
   
   if(!digitalRead(PIN_SWITCH)) {
-    pumpOn()(
+    pumpOn();
     autoReset=millis();
     displayCenterText("Manual On");
   } else {
@@ -209,7 +209,7 @@ void runAuto() {
   if(countdownActive && _countdown>0) {
     if(countdown(1000)) {
       if(_countdown>30) {
-        pumpOff()
+        pumpOff();
         display.setTextSize(4);
         displayCenterText("PI: "+String(_countdown-30));
         display.display();
