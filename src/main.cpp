@@ -2,6 +2,7 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include "driver/rtc_io.h"
 
 #if !( defined(ESP8266) ||  defined(ESP32) )
   #error This code is intended to run on the ESP32 platform! Please check your Tools->Board setting.
@@ -59,6 +60,11 @@ void displayCenterText(String text) {
   display.println(text); // text to display
   display.display();
 }
+
+//VARS - PUMP
+int pumpMaxRun=45;
+int pumpStopTime=0;
+bool pumpState=false;
 
 int sleepAfter = 0;
 int wakeTimeout=120;
@@ -134,7 +140,7 @@ void debugStats() {
     Serial.print(F("Pin M: "));
     Serial.println(digitalRead(PIN_MODE));
     Serial.print(F("Pump State: "));
-    Serial.println(pumpOn);
+    Serial.println(pumpState);
     if(mode=='M') {
       if(digitalRead(PIN_SWITCH)) {
         Serial.println("Pump Off");
@@ -153,9 +159,6 @@ void debugStats() {
   }
 }
 
-int pumpMaxRun=45;
-int pumpStopTime=0;
-bool pumpState=false
 void runPump() {
   if(millis()>pumpStopTime) {
     digitalWrite(PIN_PUMP,0);
