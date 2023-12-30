@@ -356,7 +356,7 @@ int lastScreenUpdate=0;
 void drawScreen() {
   if(millis()>suspendAfter) {
     display.clearDisplay();
-    display.display();
+    // display.display();
   }
   if(millis()<(lastScreenUpdate+200)) return;
   lastScreenUpdate=millis();
@@ -428,6 +428,15 @@ void setup() {
     })
     .onProgress([](unsigned int progress, unsigned int total) {
       Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+      display.clearDisplay();
+      display.setCursor(0,0);
+      display.setTextSize(1);
+      display.println("Firmware Update");
+      display.setCursor(0,8);
+      display.setTextSize(3);
+      display.print((progress / (total/100)));
+      display.println("%");
+      display.display();
     })
     .onError([](ota_error_t error) {
       Serial.printf("Error[%u]: ", error);
