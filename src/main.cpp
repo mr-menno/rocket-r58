@@ -4,6 +4,13 @@
 #include <Adafruit_SSD1306.h>
 #include "driver/rtc_io.h"
 #include <WiFi.h>
+#include <WiFiManager.h>
+#include <ESPmDNS.h>
+#include <WiFiUdp.h>
+#include <ArduinoOTA.h>
+#include <RemoteDebug.h>
+RemoteDebug Debug;
+
 
 #if !( defined(ESP8266) ||  defined(ESP32) )
   #error This code is intended to run on the ESP32 platform! Please check your Tools->Board setting.
@@ -268,13 +275,11 @@ void readModeButton() {
 }
 
 void displayOverlay() {
-  if(millis()<suspendAfter) {
-    //IP on Screen
-    display.setTextSize(1);
-    display.setCursor(0,25);
-    display.print("IP: ");
-    display.print(WiFi.localIP());
-  }
+  //IP on Screen
+  display.setTextSize(1);
+  display.setCursor(0,25);
+  display.print("IP: ");
+  display.print(WiFi.localIP());
 }
 
 void drawManual() {
@@ -349,6 +354,10 @@ void drawCountdown() {
 
 int lastScreenUpdate=0;
 void drawScreen() {
+  if(millis()>suspendAfter) {
+    display.clearDisplay();
+    display.display();
+  }
   if(millis()<(lastScreenUpdate+200)) return;
   lastScreenUpdate=millis();
   display.clearDisplay();
@@ -362,6 +371,7 @@ void drawScreen() {
   if(!countdownActive) {
     displayOverlay();
   }
+  debugV("Display Update");
   display.display();
 }
 
@@ -375,8 +385,8 @@ void setup() {
     for(;;); // Don't proceed, loop forever
   }
 
-  delay(2000);
-  Serial.println("Setup: Clear Display()");
+  // delay(2000);
+  // Serial.println("Setup: Clear Display()");
   display.clearDisplay();
   display.setTextSize(2);
   display.setTextColor(SSD1306_WHITE);
@@ -384,14 +394,70 @@ void setup() {
   display.display();
   delay(1000);
   display.clearDisplay();
-  rtc_gpio_deinit(GPIO_NUM_32);
+
   pinMode(PIN_SWITCH, INPUT_PULLUP);
   pinMode(PIN_MODE, INPUT_PULLUP);
   pinMode(PIN_PUMP, OUTPUT);
+
+  WiFiManager wifiManager;
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setCursor(0,0);
+  display.println("Connecting to WiFi...");
+  display.print("SSID: ");
+  String SSID = "Rocker-R58-" + String(ESP.getEfuseMac(),16);
+  display.println(SSID);
+  display.display();
+  wifiManager.autoConnect(SSID.c_str());
+
+
+  // ARDUINO OTA
+  ArduinoOTA
+    .onStart([]() {
+      String type;
+      if (ArduinoOTA.getCommand() == U_FLASH)
+        type = "sketch";
+      else // U_SPIFFS
+        type = "filesystem";
+
+      // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
+      Serial.println("Start updating " + type);
+    })
+    .onEnd([]() {
+      Serial.println("\nEnd");
+    })
+    .onProgress([](unsigned int progress, unsigned int total) {
+      Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+    })
+    .onError([](ota_error_t error) {
+      Serial.printf("Error[%u]: ", error);
+      if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+      else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+      else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+      else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+      else if (error == OTA_END_ERROR) Serial.println("End Failed");
+    });
+
+  ArduinoOTA.begin();
+
+  //Debugger
+  if (MDNS.begin("rocker-r58")) {
+    Serial.print("* MDNS responder started. Hostname -> ");
+    Serial.println("rocket-r58");
+  }
+  MDNS.addService("telnet", "tcp", 23);
+
+  Debug.begin("rocket-r58.local");          // Initialize the WiFi server
+  Debug.setResetCmdEnabled(true);  // Enable the reset command
+  Debug.showProfiler(true);        // Profiler (Good to measure times, to optimize codes)
+  Debug.showColors(true);
+
   setModeAuto();
 }
 
 void loop() {
+  ArduinoOTA.handle();
+  Debug.handle();
   debugStats();
   if(mode=='C') {
     runAuto();
@@ -402,4 +468,5 @@ void loop() {
   readModeButton();
   suspend();
   drawScreen();
+  yield();
 }
